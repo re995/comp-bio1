@@ -172,6 +172,17 @@ class CellularAutomaton:
         return self._grid[target_x % self._size_x, target_y % self._size_y] == CellState.EMPTY
 
     def __move_cell(self, cell: Cell):
+        """
+        Moves cell around the grid.
+        1. The function creates a list of all movement offset options.
+        2. Then it randomly chooses one option, and checks if it is valid (if a cell is in the target position, using __is_valid_move)
+        While a valid option wasn't found:
+            Remove the sampled invalid option from the list
+            Go to step 2
+
+        Eventually a valid option must be found, because a cell can always stay in place.
+        :param cell: The cell object to move
+        """
         # Create a list of all the move options for current cell.
         options = list(itertools.product(range(-cell.speed, cell.speed + 1), repeat=2))
 
