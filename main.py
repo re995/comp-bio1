@@ -1,62 +1,64 @@
-import datetime
+# Dynamically download required modules
+import subprocess
+import sys
+import pkg_resources
+
+required = {"numpy", "matplotlib"}
+installed = {pkg.key for pkg in pkg_resources.working_set}
+missing = required - installed
+if missing:
+    python_path = sys.executable
+    subprocess.check_call([python_path, "-m", "pip", "install", *missing])
+
+
 import itertools
 import random
-import threading
-import time
-from enum import Enum
+
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.ticker import AutoLocator
 
 import numpy as np
 
-# import pygame
-# from pygame.constants import HWSURFACE, DOUBLEBUF, RESIZABLE
+# PARAMETERS FOR THE SIMULATION
 
-N = 9000  # Cells count
-D = 0.0001  # Initial sick cells ratio
-R = 0.0015  # Swift cells ratio
-X = 50  # Generations count until recovery
-P_HIGH = 0.2  # High infection change
-P_LOW = 0.009  # Low infection change
-T = 0.03  # Infection chance change threshold (From high to low)
+N = 1350  # Cells count
+D = 0.02  # Initial sick cells ratio
+R = 0.2  # Swift cells ratio
+X = 28  # Generations count until recovery
+P_HIGH = 0.28  # High infection chance
+P_LOW = 0.20  # Low infection chance
+T = 0.05  # Infection chance change threshold (From high to low)
 
+# COLOR CONSTANTS
 COLOR_EMPTY_CELL = [0x00, 0x00, 0x00]  # Black
 COLOR_HEALTHY_CELL = [0, 0x3e, 0xff]  # Blue
 COLOR_SICK_CELL = [0xff, 0, 0]  # Red
 COLOR_RECOVERED_CELL = [0, 0xf1, 0x33]  # Green
-
+GRID_COLORS = np.array([COLOR_EMPTY_CELL,
+                        COLOR_HEALTHY_CELL,
+                        COLOR_SICK_CELL,
+                        COLOR_RECOVERED_CELL])
 
 
 class CellState:
+    """
+    Enum for saving cell state. The state values correspond to the color indexes for the grid
+    """
     EMPTY = 0
     HEALTHY = 1
     SICK = 2
     RECOVERED = 3
 
 
-class WraparoundArray(np.ndarray):
-    def __init__(self, size_x, size_y):
-        self._arr = np.zeros((size_x, size_y), dtype=int)
-        self._size_x, self._size_y = size_x, size_y
-
-    def __getitem__(self, item):
-        new_item = (item[0] % self._size_x, item[1] % self._size_y)
-        return self._arr.__getitem__(new_item)
-
-    def __setitem__(self, key, value):
-        new_key = (key[0] % self._size_x, key[1] % self._size_y)
-        return self._arr.__setitem__(new_key, value)
-
-    def __str__(self):
-        return self._arr.__str__()
-
-    def __repr__(self):
-        return self._arr.__repr__()
-
-
 class Cell:
     def __init__(self, x, y, speed=1):
+        """
+        Cell init
+        :param x: X position
+        :param y: Y position
+        :param speed: Max steps per generation
+        """
         self.x = x
         self.y = y
         self.state = CellState.HEALTHY
@@ -72,10 +74,13 @@ class Cell:
         return f"X: {self.x}    Y: {self.y}    speed: {self.speed}     state: {self.state}"
 
 
-class Automaton:
-    def __init__(self, size_x=200, size_y=200, cells_count=400, initial_sick_chance=0.2, swift_cells_chance=0.3,
-                 generations_until_recovery=10, low_infection_chance=0.1, high_infection_chance=0.4,
-                 low_infection_threshold=0.4):
+class CellularAutomaton:
+    """
+    Class that represent the cellular automaton described in the exercise
+    """
+    def __init__(self, size_x, size_y, cells_count, initial_sick_chance, swift_cells_chance,
+                 generations_until_recovery, low_infection_chance, high_infection_chance,
+                 low_infection_threshold):
         self._size_x = size_x
         self._size_y = size_y
         self._cells_count = cells_count
@@ -112,10 +117,6 @@ class Automaton:
     def recovered_ratio(self):
         return self.__get_cell_ratio(CellState.RECOVERED)
 
-    @property
-    def sick_healthy_ratio(self):
-        return len(self._cells_states[CellState.SICK]) / (len(self._cells_states[CellState.HEALTHY]) + len(self._cells_states[CellState.SICK]))
-
     def __get_cell_ratio(self, state):
         return len(self._cells_states[state]) / float(len(self._cells))
 
@@ -128,7 +129,7 @@ class Automaton:
 
     @property
     def _infection_chance(self):
-        return self._high_infection_chance if self.sick_healthy_ratio < self._low_infection_threshold else self._low_infection_chance
+        return self._high_infection_chance if self.sick_ratio < self._low_infection_threshold else self._low_infection_chance
 
     def __init_cells(self):
         available_positions = list(range(self._size_x * self._size_y))  # Board is empty.
@@ -141,16 +142,11 @@ class Automaton:
             self._grid[x % self._size_x, y % self._size_y] = cell.state
             available_positions.remove(flat_index)
 
+    def start_disease(self):
         # Sicken cells.
         for cell in self._cells:
             if random.random() < self._initial_sick_chance:
                 self.__update_cell_state(cell, CellState.SICK)
-
-        if len(self._cells_states[CellState.SICK]) == 0:
-            self._cells_states[CellState.HEALTHY].clear()
-            self._grid = np.zeros((self._size_x, self._size_y), dtype=int)
-            self.__init_cells()
-            return
 
     def __update_cell_state(self, cell, new_state):
         # Remove the cell from its current list
@@ -189,9 +185,9 @@ class Automaton:
                 break
         # Chose a valid move.
         self._grid[cell.x % self._size_x, cell.y % self._size_y] = CellState.EMPTY
-        cell.x = target_x
-        cell.y = target_y
-        self._grid[cell.x % self._size_x, cell.y % self._size_y] = cell.state
+        cell.x = target_x % self._size_x
+        cell.y = target_y % self._size_y
+        self._grid[cell.x, cell.y] = cell.state
 
     def step_generation(self):
         for cell in self._cells:
@@ -236,43 +232,21 @@ class Automaton:
 
 
 def run_simulation(automaton):
-    # plt.ion()
-    #
-    colors = np.array([COLOR_EMPTY_CELL,
-                       COLOR_HEALTHY_CELL,
-                       COLOR_SICK_CELL,
-                       COLOR_RECOVERED_CELL])
-    #
-    # plt.imshow(colors[automaton._grid])
-    #
-    # def update_simulation():
-    #     while True:
-    #         plt.clf()
-    #         automaton.step_generation()
-    #         plt.pause(1)
-    #         plt.draw()
-    #
-    # t = threading.Thread(target=update_simulation)
-    # t.start()
-    # plt.show()
-
-    # set up animation
-
+    """
+    Runs the whole simulation using matplotlib animation
+    """
     sickness_ratio_values = []
-    sick_healthy_ratio_values = []
 
     fig, (ax_grid, ax_sickness) = plt.subplots(2, figsize=(10, 8))
-    plt.xticks([])
-    plt.yticks([])
+    ax_grid.set_xticks([])
+    ax_grid.set_yticks([])
 
     state_text = ax_grid.text(205, 110, "")
-    img = ax_grid.imshow(colors[automaton._grid], interpolation='nearest')
+    grid_plot = ax_grid.imshow(GRID_COLORS[automaton._grid], interpolation='nearest')
 
     sickness_line, = ax_sickness.plot([], [])
-    sick_healthy_line, = ax_sickness.plot([], [])
     ax_sickness.set_xlabel("Generations")
-    ax_sickness.set_ylabel("%")
-
+    ax_sickness.set_ylabel("Sick %")
 
     props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
     legend_text = ax_sickness.text(0.77, 0.95, "", transform=ax_sickness.transAxes, fontsize=12,
@@ -292,40 +266,35 @@ def run_simulation(automaton):
                              f"P_HIGH = {P_HIGH}\n"
                              f"P_LOW = {P_LOW}\n"
                              f"T = {T}\n"
-                             f"Healthy: {automaton.healthy_ratio * 100 : .2f}%\n"
-                             f"Sick/Healthy: {automaton.sick_healthy_ratio : .2f}")
+                             f"Healthy: {automaton.healthy_ratio * 100 : .2f}%")
 
-        if sickness_ratio_values and sickness_ratio_values[-1] == 0:
+        if sickness_ratio_values and sickness_ratio_values[-1] == 0 and len(sickness_ratio_values) > 1:
             # No more sick cells. Stop simulation
-            plt.savefig("figs/" + str(datetime.datetime.now()) + "_NEW_T_DEFINITION_2.png")
             ani.pause()
             return
 
         sickness_ratio_values.append(automaton.sick_ratio)
-        sick_healthy_ratio_values.append(automaton.sick_healthy_ratio)
 
         automaton.step_generation()
-        img.set_data(colors[automaton._grid])
+        grid_plot.set_data(GRID_COLORS[automaton._grid])
 
         sickness_line.set_data(np.arange(automaton.generations_passed), np.array(sickness_ratio_values))
-        sick_healthy_line.set_data(np.arange(automaton.generations_passed), np.array(sick_healthy_ratio_values))
 
         ax_sickness.set_xlim(0, automaton.generations_passed)
-        ax_sickness.set_ylim(0, 0.3)
+        ax_sickness.set_ylim(0, max(sickness_ratio_values) + 0.001)
         ax_sickness.xaxis.set_major_locator(AutoLocator())
         ax_sickness.yaxis.set_major_locator(AutoLocator())
         ax_sickness.axhline(y=automaton._low_infection_threshold, color='r', linestyle='-', linewidth=0.5)
-        return img, sickness_line, sick_healthy_line
+
+        if automaton.generations_passed == 1:
+            automaton.start_disease()
+
+        return grid_plot, sickness_line
 
     ani = animation.FuncAnimation(fig, update, interval=1)
     plt.show()
 
 
-automaton = Automaton(200, 200, N, D, R, X, P_LOW, P_HIGH, T)
-run_simulation(automaton)
-
-# plot_automaton(automaton)
-# print(automaton)
-# for i in range(50):
-#     automaton.step_generation()
-#     print(automaton)
+if __name__ == '__main__':
+    automaton = CellularAutomaton(200, 200, N, D, R, X, P_LOW, P_HIGH, T)
+    run_simulation(automaton)
