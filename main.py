@@ -257,7 +257,7 @@ def run_simulation(automaton):
 
     sickness_line, = ax_sickness.plot([], [])
     ax_sickness.set_xlabel("Generations")
-    ax_sickness.set_ylabel("Sick %")
+    ax_sickness.set_ylabel("Sick ratio")
 
     props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
     legend_text = ax_sickness.text(0.77, 0.95, "", transform=ax_sickness.transAxes, fontsize=12,
